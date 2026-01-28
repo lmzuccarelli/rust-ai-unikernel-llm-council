@@ -1,0 +1,31 @@
+[package]
+name = "unikernel-llm-council"
+version = "0.3.7"
+edition = "2024"
+authors = ["luigizuccarelli@gmail.com"]
+
+[dependencies]
+http = "1.4.0"
+http-body = "1.0.1"
+http-body-util =  "0.1.3" 
+hyper = "1.8.1"
+hyper-util = { version = "0.1.19", default-features = false, features = ["tokio","server-auto"] }
+tokio = {version = "1.48.0", features = ["full"] }
+mimalloc = { version = "*", features = ["v3"] }
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
+custom-logger = { git = "https://github.com/lmzuccarelli/rust-custom-logger", branch = "main", version = "0.2.0" }
+serde = "1.0.228"
+serde_derive = "1.0.228"
+serde_json = "1.0.149"
+regex = "1.12.2"
+futures = "0.3.31"
+
+[profile.release]
+strip = true      # Strip symbols from the binary
+opt-level = "s"   # Optimize for size
+lto = true        # Enable link-time optimization
+codegen-units = 1 # Mazimize size reduction optimization
+
+[features]
+default = []
+local = []
