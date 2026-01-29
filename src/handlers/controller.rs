@@ -17,7 +17,16 @@ pub async fn flow_control(
     if check_semaphore()? {
         return Err(Box::from("[flow_control] still processing"));
     } else {
-        let cache = req.cache.unwrap_or(false);
+        let flow_control = req.flow_control;
+
+        // first check the health of all systems
+        let doc_url = get_document_store_url()?;
+        let res = process_get_call(format!("{}/v1/health", doc_url)).await?;
+        log::info!("[flow_control] {}", res);
+        for member in cm.iter() {
+            process_get_call(format!("{}/v1/health", member.url)).await?;
+            log::info!("[flow_control] {}", res);
+        }
 
         // flow is as follows
         //
@@ -33,7 +42,7 @@ pub async fn flow_control(
         log::info!("[flow_control] triggered flow_control");
 
         // 1.
-        if !cache {
+        if (flow_control & 1u8) == 1 {
             log::info!("[flow_control] executing collect initial responses");
             collect_initial_responses(
                 end_point.clone(),
@@ -51,7 +60,7 @@ pub async fn flow_control(
         let (initial_merged_responses, label_mapping) = format_initial_responses(hm_ir);
 
         // 3.
-        if !cache {
+        if (flow_control & 2u8) == 2 {
             log::info!("[flow_control] executing collect ranking responses");
             collect_ranking_responses(
                 end_point.clone(),
@@ -69,7 +78,7 @@ pub async fn flow_control(
         let ranking_merged_responses = format_ranking_responses(hm_ranking.clone());
 
         // 5.
-        if !cache {
+        if (flow_control & 4u8) == 4 {
             log::info!("[flow_control] executing chairman council analysis");
             chairman_council_analysis(
                 end_point,

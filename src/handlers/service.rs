@@ -29,8 +29,7 @@ pub async fn endpoints(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, 
                             let _ = set_semaphore(false);
                             log::error!("[endpoints] {}", err);
                             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                            *response.body_mut() =
-                                Full::from(format!("[endpoints] error : {}\n", err));
+                            *response.body_mut() = Full::from(format!("[endpoints] {}\n", err));
                         }
                     }
                 }
@@ -52,7 +51,7 @@ pub async fn endpoints(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, 
                     Err(err) => {
                         log::error!("[endpoints] {}", err);
                         *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        *response.body_mut() = Full::from(format!("error : {:?}\n", err.source()));
+                        *response.body_mut() = Full::from(format!("{:?}\n", err.source()));
                     }
                 }
             }

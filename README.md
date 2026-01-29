@@ -77,3 +77,19 @@ Execute locally
 ```
 ./target/release/ai-unikernel-llm-council
 ```
+
+## Start Flow
+
+Execute the curl example below to start the flow process
+
+```bash
+
+curl http://192.168.1.29:8081/v1/chat/completions -H "unikernel-access: valid" -H "Content-Type: application/json" -d'{ "title": "unikernel-adoption", "prompt": "elaborate on the current state of the adoption of unikernels in enterprise systems", "max_tokens": 2048, "flow_contorl": 7 }' --connect-timeout 240
+
+# the flow_control parameter will execute all calls to skip a flow step use the following
+# - 1 -> executes the initial step only uses cache (document-service) for the rest
+# - 2 -> executes the ranking step only uses the cache (document-service) for the rest
+# - 4 -> executes the council summary step only uses the cache (document-service) for the rest
+# - 7 -> executes all steps (don't use cache)
+
+```

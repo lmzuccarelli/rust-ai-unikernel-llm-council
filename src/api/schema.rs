@@ -7,7 +7,7 @@ pub struct LLMCouncilRequestSchema {
     pub title: String,
     pub prompt: String,
     pub max_tokens: usize,
-    pub cache: Option<bool>,
+    pub flow_control: u8,
 }
 
 #[allow(unused)]
