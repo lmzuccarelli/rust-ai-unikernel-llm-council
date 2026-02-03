@@ -1,20 +1,20 @@
 {
-	"name": "unikernel-llm-council",
+	"name": "unikernel-llm-council-service",
 	"description": "Unikernel llm council controller service written in Rust",
 	"log_level": "info",
 	"council_members": [
-			{"name": "gemini", "url": "http://192.168.1.29:8082", "model": "gemini-2.5-flash", "id":1},
-			{"name": "anthropic", "url": "http://192.168.1.29:8083", "model": "claude-sonnet-4-5", "id":2},
-			{"name": "grok", "url": "http://192.168.1.29:8084", "model": "grok-4", "id":3},
-			{"name": "openai", "url": "http://192.168.1.29:8085", "model": "gpt-5.2", "id":4}
+			{"name": "gemini", "url": "http://192.168.1.20:8090", "model": "gemini-2.5-flash", "id": 1},
+			{"name": "anthropic", "url": "http://192.168.1.19:8090", "model": "claude-sonnet-4-5", "id": 2},
+			{"name": "grok", "url": "http://192.168.1.21:8090", "model": "grok-4", "id": 3},
+			{"name": "openai", "url": "http://192.168.1.22:8090", "model": "gpt-5.2", "id": 4}
   ],
 	"council_chairman": {
 			"name": "gemini", 
-			"url": "http://192.168.1.29:8082", 
+			"url": "http://192.168.1.20:8090", 
 			"model": "gemini-2.5-flash",
 		  "id": 1
 	},
 	"document_service_url": "http://192.168.1.29:8080",
 	"semaphore": false,
-	"server_port": 8081
+	"server_port": 8090
 }

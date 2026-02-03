@@ -1,4 +1,4 @@
-use crate::handlers::controller::{all_health, flow_control};
+use crate::handlers::controller::flow_control;
 use crate::handlers::helper::set_semaphore;
 use custom_logger as log;
 use http::{Method, Request, Response, StatusCode};
@@ -16,8 +16,8 @@ pub async fn endpoints(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, 
                 let data = req.into_body().collect().await?.to_bytes();
                 let result = flow_control("/v1/chat/completions".to_owned(), data).await;
                 match result {
-                    Ok(_) => {
-                        *response.body_mut() = Full::from("[endpoints] flow_control completed\n");
+                    Ok(contents) => {
+                        *response.body_mut() = Full::from(contents);
                     }
                     Err(err) => {
                         if err.to_string().contains("still processing") {
@@ -42,20 +42,6 @@ pub async fn endpoints(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, 
         },
         Method::GET => match request {
             x if x.contains("/v1/health") => {
-                let res = all_health().await;
-                match res {
-                    Ok(value) => {
-                        let content = format!("[endpoints] all_health\n{}", value);
-                        *response.body_mut() = Full::from(content);
-                    }
-                    Err(err) => {
-                        log::error!("[endpoints] {}", err);
-                        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        *response.body_mut() = Full::from(format!("{:?}\n", err.source()));
-                    }
-                }
-            }
-            x if x.contains("/v1/is-alive") => {
                 let content = format!(
                     r##"{{ "status":"ok", "appplication": "{}", "version": "{}" }}"##,
                     env!("CARGO_PKG_NAME"),

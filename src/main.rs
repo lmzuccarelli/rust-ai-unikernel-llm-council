@@ -60,7 +60,7 @@ fn main() {
 
     let result = run_server(parameters.server_port);
     match result {
-        Ok(_) => log::info!("[main] unikernel shutdown successfully"),
+        Ok(_) => log::info!("[main] unikernel shutdown"),
         Err(err) => {
             log::error!("{}", err);
             std::process::exit(1);

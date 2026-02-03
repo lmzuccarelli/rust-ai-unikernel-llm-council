@@ -1,17 +1,19 @@
-use crate::api::schema::LLMCouncilRequestSchema;
+use crate::api::schema::{Document, LLMCouncilRequestSchema, ResponseSummary};
 use crate::config::load::ModelSchema;
 use crate::handlers::api_calls::*;
 use crate::handlers::helper::*;
+use colored::{ColoredString, Colorize};
 use custom_logger as log;
 use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
 use hyper::body::Bytes;
+use regex::Regex;
 use std::collections::BTreeMap;
 
 pub async fn flow_control(
     end_point: String,
     data: Bytes,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error>> {
     let req: LLMCouncilRequestSchema = serde_json::from_slice(&data)?;
     let cm = get_council_members()?;
     if check_semaphore()? {
@@ -20,21 +22,16 @@ pub async fn flow_control(
         let flow_control = req.flow_control;
 
         // first check the health of all systems
-        let doc_url = get_document_store_url()?;
-        let res = process_get_call(format!("{}/v1/health", doc_url)).await?;
-        log::info!("[flow_control] {}", res);
-        for member in cm.iter() {
-            process_get_call(format!("{}/v1/health", member.url)).await?;
-            log::info!("[flow_control] {}", res);
-        }
+        log::info!("[flow_control] checking services health");
+        all_health().await?;
 
         // flow is as follows
         //
-        // 1. collect initial response from user prompt to all council members
+        // 1. collect initial response from the user prompt to all council members
         // 2. create a ranking prompt from the responses obtained in step 1
         // 3. collect the ranking results from all council members using the ranking prompt
-        // 4. create a summary prompt for the council chairman
-        // 5. collect the council chariman's summary and final rating
+        // 4. create a summary prompt for the council chairman and also calculate rankings score (lower is better)
+        // 5. collect the council chariman's summary
 
         set_semaphore(true)?;
 
@@ -76,6 +73,7 @@ pub async fn flow_control(
         // 4.
         let hm_ranking = get_all_documents(cm.clone(), format!("ranking-{}", req.title)).await?;
         let ranking_merged_responses = format_ranking_responses(hm_ranking.clone());
+        let aggregated_rankings = calculate_aggregate_rankings(hm_ranking)?;
 
         // 5.
         if (flow_control & 4u8) == 4 {
@@ -91,44 +89,35 @@ pub async fn flow_control(
             log::info!("[flow_control] completed chairman council analysis");
         }
 
-        log::info!("[flow_control] label mapping {:?}", label_mapping);
-
+        let summary = get_summary(req.title, aggregated_rankings, label_mapping)?;
+        let json = serde_json::to_string_pretty(&summary)?;
+        let cs: ColoredString = json.white().bold();
+        log::trace!("[flow_control] {}", cs);
+        log::info!("[flow_control] completed flow");
         // all good set semaphore to false
         set_semaphore(false)?;
+        Ok(json)
     }
-    Ok(())
 }
 
-pub async fn all_health() -> Result<String, Box<dyn std::error::Error>> {
-    let mut result: String = String::new();
+pub async fn all_health() -> Result<(), Box<dyn std::error::Error>> {
+    let doc_url = get_document_store_url()?;
+    let res_doc = process_get_call(format!("{}/v1/health", doc_url)).await?;
+    log::info!("[all_health] document-service {}", res_doc);
     let council_members = get_council_members()?;
     let cm = council_members.clone();
     for ms in cm.iter() {
-        let name = ms.name.clone();
-        let base_url = ms.url.clone();
-        let handle = tokio::spawn(async move {
-            let response = process_get_call(format!("{}/v1/health", base_url)).await;
-            match response {
-                Ok(content) => {
-                    log::debug!("[all_health] mapping member {} {}", name, content);
-                    content
-                }
-                Err(e) => {
-                    log::error!("[all_health] response {} {}", name, e);
-                    e.to_string()
-                }
-            }
-        });
-        match handle.await {
-            Ok(res) => {
-                result.push_str(&format!("{}: {}", ms.name, res));
+        let response = process_get_call(format!("{}/v1/health", ms.url)).await;
+        match response {
+            Ok(content) => {
+                log::info!("[all_health] {} {}", ms.name, content.replace("\n", ""));
             }
             Err(e) => {
-                log::error!("[all_health] spawn {}", e);
+                log::error!("[all_health] {} {}", ms.name, e);
             }
         }
     }
-    Ok(result)
+    Ok(())
 }
 
 async fn collect_initial_responses(
@@ -339,6 +328,70 @@ fn format_ranking_responses(ranking_responses: BTreeMap<String, String>) -> Stri
         stage_prompt.push_str(&model_response);
     }
     stage_prompt
+}
+
+fn calculate_aggregate_rankings(
+    hm_ir: BTreeMap<String, String>,
+) -> Result<BTreeMap<String, usize>, Box<dyn std::error::Error>> {
+    let mut hm_result: BTreeMap<String, usize> = BTreeMap::new();
+    let re = Regex::new(r"\d+\.\s*Response [A-Z]")?;
+    for v in hm_ir.values() {
+        let all = re.captures_iter(v);
+        for (count, ranking) in all.enumerate() {
+            let key = ranking
+                .get_match()
+                .as_str()
+                .split(". ")
+                .nth(1)
+                .unwrap_or("");
+            let val = hm_result.get(key).unwrap_or(&0);
+            hm_result.insert(key.to_string(), count + val);
+        }
+    }
+    Ok(hm_result)
+}
+
+fn get_summary(
+    title: String,
+    rankings: BTreeMap<String, usize>,
+    mapping: BTreeMap<String, String>,
+) -> Result<ResponseSummary, Box<dyn std::error::Error>> {
+    let cm = get_council_members()?;
+    let mut vec_documents = vec![];
+    for member in cm.clone().iter() {
+        let doc_initial = Document {
+            name: member.name.clone(),
+            url: format!(
+                "https://unikernel-sandbox/document-store/read?document={}-initial-{}.md",
+                member.name, title
+            ),
+        };
+        let doc_ranking = Document {
+            name: member.name.clone(),
+            url: format!(
+                "https://unikernel-sandbox/document-store/read?document={}-ranking-{}.md",
+                member.name, title
+            ),
+        };
+        vec_documents.push(doc_initial);
+        vec_documents.push(doc_ranking);
+    }
+    let chairman = get_council_chairman()?;
+    let doc_chairman = Document {
+        name: chairman.name.clone(),
+        url: format!(
+            "https://unikernel-sandbox/document-store/read?document={}-chairman-summary-{}.md",
+            chairman.name, title
+        ),
+    };
+    vec_documents.push(doc_chairman);
+
+    let summary = ResponseSummary {
+        documents: vec_documents.clone(),
+        summary_result: rankings,
+        response_mapping: mapping,
+    };
+    Ok(summary)
 }
 
 // TDD - initial phase
